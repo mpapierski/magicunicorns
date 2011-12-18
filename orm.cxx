@@ -167,6 +167,70 @@ struct eq_impl
 };
 
 template <typename T1, typename T2>
+struct neq_impl
+{
+	T1 expr_;
+	T2 value_;
+	
+	neq_impl(T1 t, T2 value): expr_(t), value_(value) {}
+	
+	template <typename F1>
+	bool operator()(F1 obj)
+	{
+		return expr_(obj) != value_;
+	}
+	
+	template <typename F1, typename F2>
+	F1 operator()(F1 obj, F2 val)
+	{
+		return expr_(obj, val) != value_;
+	}
+};
+
+
+template <typename T1, typename T2>
+struct gt_impl
+{
+	T1 expr_;
+	T2 value_;
+	
+	gt_impl(T1 t, T2 value): expr_(t), value_(value) {}
+	
+	template <typename F1>
+	bool operator()(F1 obj)
+	{
+		return expr_(obj) > value_;
+	}
+	
+	template <typename F1, typename F2>
+	F1 operator()(F1 obj, F2 val)
+	{
+		return expr_(obj, val) > value_;
+	}
+};
+
+template <typename T1, typename T2>
+struct lt_impl
+{
+	T1 expr_;
+	T2 value_;
+	
+	lt_impl(T1 t, T2 value): expr_(t), value_(value) {}
+	
+	template <typename F1>
+	bool operator()(F1 obj)
+	{
+		return expr_(obj) < value_;
+	}
+	
+	template <typename F1, typename F2>
+	F1 operator()(F1 obj, F2 val)
+	{
+		return expr_(obj, val) < value_;
+	}
+};
+
+template <typename T1, typename T2>
 struct and_impl
 {
 	T1 expr_;
@@ -224,10 +288,30 @@ eq_impl<T1, T2> operator==(T1 t1, T2 t2)
 }
 
 template <typename T1, typename T2>
+neq_impl<T1, T2> operator!=(T1 t1, T2 t2)
+{
+	return neq_impl<T1, T2>(t1, t2);
+}
+
+
+template <typename T1, typename T2>
 and_impl<T1, T2> operator&(T1 t1, T2 t2)
 {
 	return and_impl<T1, T2>(t1, t2);
 }
+
+template <typename T1, typename T2>
+gt_impl<T1, T2> operator>(T1 t1, T2 t2)
+{
+	return gt_impl<T1, T2>(t1, t2);
+}
+
+template <typename T1, typename T2>
+lt_impl<T1, T2> operator<(T1 t1, T2 t2)
+{
+	return lt_impl<T1, T2>(t1, t2);
+}
+
 
 int
 main(int argc, const char* argv[])
@@ -280,6 +364,25 @@ main(int argc, const char* argv[])
 			(F(&people::second_name) == "qwererywer")
 		).size() == 1);
 		
+		assert(mgr.peoples.find(
+			(F(&people::people_id) > 1)
+		).size() == 4);
+		
+		assert(mgr.peoples.find(
+			(F(&people::people_id) > 1) &
+			(F(&people::people_id) < 5)
+		).size() == 3);
+		
+		assert(mgr.peoples.find(
+			(F(&people::people_id) > 1) &
+			(F(&people::people_id) < 5) &
+			(F(&people::first_name) == "asdf")
+		).size() == 1);
+		
+		assert(mgr.peoples.find(
+			(F(&people::people_id) != 1) &
+			(F(&people::people_id) != 2)
+		).size() == 3);
 		
 	}
 	return 0;
