@@ -3,14 +3,11 @@
 #include <vector>
 #include <list>
 #include <map>
-#include <cassert>
-
-using namespace std;
 
 struct abstract_field
 {
-	virtual string type() = 0;
-	virtual string name() = 0;
+	virtual std::string type() = 0;
+	virtual std::string name() = 0;
 };
 
 struct table
@@ -20,12 +17,12 @@ struct table
 	
 	void add_field(abstract_field* field)
 	{
-		fields_.push_back(pair<string, string>(field->name(), field->type()));
+		fields_.push_back(std::pair<std::string, std::string>(field->name(), field->type()));
 	}
 	
-	typedef vector<pair<string, string> > fields_t;
+	typedef std::vector<std::pair<std::string, std::string> > fields_t;
 	fields_t fields_;
-	string tablename_;
+	std::string tablename_;
 };
 
 /* 
@@ -36,17 +33,17 @@ template <typename T>
 struct get_type;
 
 template <>
-struct get_type<string> { string value() const { return "TEXT"; } };
+struct get_type<std::string> { std::string value() const { return "TEXT"; } };
 
 template <>
-struct get_type<int> { string value() const { return "INTEGER"; } };
+struct get_type<int> { std::string value() const { return "INTEGER"; } };
 
 template <typename T>
 struct field: abstract_field
 {
 	typedef T value_type;
 	
-	field(table* parent, string name, const value_type& value = value_type()):
+	field(table* parent, std::string name, const value_type& value = value_type()):
 		name_(name),
 		value_(value)
 	{
@@ -73,37 +70,18 @@ struct field: abstract_field
 		return value_;
 	}
 	
-	friend ostream& operator<<(ostream& out, const field& fld)
+	friend std::ostream& operator<<(std::ostream& out, const field& fld)
 	{
 		out << fld.value_;
 		return out;
 	}
 	
-	string name_;
+	std::string name_;
 	value_type value_;
 	get_type<T> type_;
 	
-	virtual string name() { return name_; }
-	virtual string type() { return type_.value(); }
-};
-
-struct people: table
-{
-	field<int> people_id;
-	field<string> first_name;
-	field<string> second_name;
-	
-	people(int id, string first_name, string second_name) :
-		table("people"),
-		people_id(this, "people_id", id),
-		first_name(this, "first_name", first_name),
-		second_name(this, "second_name", second_name) {}
-	
-	friend ostream& operator<<(ostream& out, const people& p)
-	{
-		out << "people(" << p.people_id << ", " << p.first_name << ", " << p.second_name << ")";
-		return out;
-	}
+	virtual std::string name() { return name_; }
+	virtual std::string type() { return type_.value(); }
 };
 
 template <typename T /* Container */>
@@ -126,7 +104,7 @@ struct cursor_impl
 		return *this;
 	}
 	
-	typename iterator_traits<typename T::iterator>::value_type operator*()
+	typename std::iterator_traits<typename T::iterator>::value_type operator*()
 	{
 		return *it_;	
 	}
@@ -139,9 +117,9 @@ struct cursor_impl
 template <typename T>
 struct dbset
 {
-	list<T> rows_;
+	std::list<T> rows_;
 	
-	typedef cursor_impl<list<T> > cursor;
+	typedef cursor_impl<std::list<T> > cursor;
 	
 	dbset()
 	{
@@ -154,11 +132,11 @@ struct dbset
 	}
 	
 	template <typename F>
-	list<T> find(F f)
+	std::list<T> find(F f)
 	{
-		list<T> results;
+		std::list<T> results;
 		
-		for (typename list<T>::iterator it = rows_.begin(),
+		for (typename std::list<T>::iterator it = rows_.begin(),
 			end(rows_.end()); it != end; it++)
 		{
 			if (f(it))
@@ -172,21 +150,15 @@ struct dbset
 
 struct dbcontext
 {
-	/* TODO: Kontekst */
+	/* TODO: database context here */
 };
 
-struct manager: dbcontext
-{
-	dbset<people> peoples;
-};
-
+/**
+ * This class will be evaluated later to value from member class field.
+ */
 template <typename T1, typename T2>
 struct field_impl
 {
-	typedef T1 value_type;
-	typedef field<T1> T2::* member_field_type;
-	typedef field<T1> field_type;
-	
 	field<T1> T2::* field_;
 	field_impl(field<T1> T2::* t): field_(t) {}
 	
@@ -197,13 +169,17 @@ struct field_impl
 	}
 };
 
+/**
+ * Implementation of operator== (logical AND)
+ */
 template <typename T1, typename T2>
 struct eq_impl
 {
 	T1 expr_;
 	T2 value_;
 	
-	eq_impl(T1 t, T2 value): expr_(t), value_(value) {}
+	eq_impl(T1 t, T2 value):
+		expr_(t), value_(value) {}
 	
 	template <typename F1>
 	bool operator()(F1 obj)
@@ -362,84 +338,4 @@ template <typename T1, typename T2>
 lt_impl<T1, T2> operator<(T1 t1, T2 t2)
 {
 	return lt_impl<T1, T2>(t1, t2);
-}
-
-
-int
-main(int argc, const char* argv[])
-{
-	{
-		people p1(123, "Janusz", "Paweliusz");
-		
-		F(&people::people_id);
-		F(&people::people_id)(&p1);
-		
-		F(&people::people_id) == 123;
-		
-		assert( (F(&people::people_id)(&p1) ) == 123);
-		assert(! ((F(&people::people_id)(&p1) ) == 124));
-		
-		F(&people::first_name);
-		F(&people::first_name)(&p1);
-		F(&people::first_name) == "asdf";
-		(F(&people::first_name) == "asdf")(&p1);
-		assert(( (F(&people::first_name) == "Janusz")(&p1) ) == true);
-	}
-	
-	{
-		people p1(123, "asdf", "zxcv");
-		((F(&people::first_name) == "asdf") & (F(&people::second_name) == "zxcv"));
-		assert((((F(&people::people_id) == 123) & (F(&people::first_name) == "asdf") & (F(&people::second_name) == "zxcv"))(&p1)) == true);
-		assert((((F(&people::first_name) == "asdf") & (F(&people::second_name) == "zxcv"))(&p1)) == true);
-		assert(!(((F(&people::first_name) == "asdf") & (F(&people::second_name) == "asdf"))(&p1)));
-	}
-	
-	{
-		manager mgr;
-	
-		mgr.peoples.put(people(1, "Jan", "Kowalski"));
-		mgr.peoples.put(people(2, "asdf", "zxcv"));
-		mgr.peoples.put(people(3, "qwer", "sgbmkfgmbks"));
-		mgr.peoples.put(people(4, "qwer2", "qwererywer"));
-		mgr.peoples.put(people(5, "qwer3", "qwererywer"));
-		
-		assert(mgr.peoples.find(F(&people::people_id) == 1).size() == 1);
-		assert(mgr.peoples.find(F(&people::people_id) == 2).size() == 1);
-		assert(mgr.peoples.find(F(&people::people_id) == 3).size() == 1);
-		
-		assert(mgr.peoples.find(F(&people::first_name) == std::string("Jan")).size() == 1);
-		assert(mgr.peoples.find(F(&people::first_name) == "zxcv").size() == 0);
-		
-		assert(mgr.peoples.find(
-			(F(&people::people_id) == 5) &
-			(F(&people::first_name) == "qwer3") &
-			(F(&people::second_name) == "qwererywer")
-		).size() == 1);
-		
-		assert(mgr.peoples.find(
-			(F(&people::people_id) > 1)
-		).size() == 4);
-		
-		assert(mgr.peoples.find(
-			(F(&people::people_id) > 1) &
-			(F(&people::people_id) < 5)
-		).size() == 3);
-		
-		assert(mgr.peoples.find(
-			(F(&people::people_id) > 1) &
-			(F(&people::people_id) < 5) &
-			(F(&people::first_name) == "asdf")
-		).size() == 1);
-		
-		assert(mgr.peoples.find(
-			(F(&people::people_id) != 1) &
-			(F(&people::people_id) != 2)
-		).size() == 3);
-		
-		for (dbset<people>::cursor c(mgr.peoples.find(F(&people::people_id) > 1)); c; ++c)
-		{
-			cout << *c << endl;
-		}
-	}
-	return 0;
 }

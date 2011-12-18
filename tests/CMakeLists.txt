@@ -1,0 +1,8 @@
+CMAKE_MINIMUM_REQUIRED (VERSION 2.6)
+PROJECT (tests)
+
+SET (tests_SOURCES
+	main.cpp)
+
+ADD_EXECUTABLE (tests
+	${tests_SOURCES})
