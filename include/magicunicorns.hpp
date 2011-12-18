@@ -1,3 +1,21 @@
+/*  
+ * Copyright (C) 2011 magicunicorns authors,
+ *
+ * This file is part of magicunicorns.
+ *   
+ * magicunicorns is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Lesser General Public License as published by
+ * the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * magicunicorns is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public License
+ * along with this program.  If not, see <http://www.gnu.org/licenses/>.
+ */
 #include <iostream>
 #include <string>
 #include <vector>
@@ -26,8 +44,9 @@ struct table
 };
 
 /* 
- * okreslanie typu
- * potrzebne do serializacji dokumentu
+ * String representation of type.
+ * To be used with data serialization and also we can forbid weird
+ * data types at compile time.
  */
 template <typename T>
 struct get_type;
@@ -38,6 +57,9 @@ struct get_type<std::string> { std::string value() const { return "TEXT"; } };
 template <>
 struct get_type<int> { std::string value() const { return "INTEGER"; } };
 
+/**
+ * Field. Actually a POD variable wrapper.
+ */
 template <typename T>
 struct field: abstract_field
 {
@@ -84,6 +106,9 @@ struct field: abstract_field
 	virtual std::string type() { return type_.value(); }
 };
 
+/**
+ * Iterator wrapper. Easy iterating over result sets.
+ */
 template <typename T /* Container */>
 struct cursor_impl
 {
@@ -93,6 +118,9 @@ struct cursor_impl
 	{
 	}
 	
+	/**
+	 * Safe bool idiom
+	 */	
 	operator bool()
 	{
 		return it_ != container_.end();
@@ -131,8 +159,14 @@ struct dbset
 		rows_.push_back(t);
 	}
 	
+	/**
+	 * This thing simply iterates over rows,
+	 * evaluates expression with value, and if it evaluates to true
+	 * then copy it to 'result set'.
+	 * @param f operator instance with type of operator_impl.
+	 */
 	template <typename F>
-	std::list<T> find(F f)
+	std::list<T> filter(F f)
 	{
 		std::list<T> results;
 		
@@ -144,7 +178,6 @@ struct dbset
 		}
 		
 		return results;
-		
 	}
 };
 
@@ -194,6 +227,9 @@ struct eq_impl
 	}
 };
 
+/**
+ * Implementation of operator!= (logical NOT EQUAL)
+ */
 template <typename T1, typename T2>
 struct neq_impl
 {
@@ -215,7 +251,9 @@ struct neq_impl
 	}
 };
 
-
+/**
+ * Implementation of operator> (logical GREATER THAN)
+ */
 template <typename T1, typename T2>
 struct gt_impl
 {
@@ -237,6 +275,9 @@ struct gt_impl
 	}
 };
 
+/**
+ * Implementation of operator< (logical LOWER THAN)
+ */
 template <typename T1, typename T2>
 struct lt_impl
 {
@@ -258,6 +299,9 @@ struct lt_impl
 	}
 };
 
+/**
+ * Implementation of operator& (logical AND)
+ */
 template <typename T1, typename T2>
 struct and_impl
 {
@@ -273,41 +317,17 @@ struct and_impl
 	}
 };
 
-
-/* 
- * TODO: Zamiast eq_impl zrobic field_impl
- * aby mozna bylo budowac cale wyrazenia jak w boost.phoenix.
- * np wyrazenie F(&tabla::pole1) == 123 && F(&tabla::pole2) == 456 
- * powinno zwrocic typ expr<and_impl<eq_impl<...>, eq_impl<...> > >
+/**
+ * As I can not force static operator to accept type of field<T1> T2::*
+ * I had to do this.
+ * This thing actually spawns new instance of field_impl which just
+ * holds fld value.
  */
 template <typename T1, typename T2>
 field_impl<T1, T2> F(field<T1> T2::* fld)
 {
 	return field_impl<T1, T2>(fld);
 }
-
-//template <typename FieldT>
-template <typename FieldT, typename ValueT>
-struct expr
-{
-	FieldT field_;
-	ValueT value_;
-	
-	expr(FieldT fld, ValueT value):
-		field_(fld),
-		value_(value) {}
-	
-	template <typename T1>
-	bool operator()(T1 object)
-	{
-		/* 
-		 * field_ to implementacja naszego operatora
-		 * a wiec przekazmy tam spowrotem nasz obiekt i wartosc
-		 * aby nie duplikowac kodu wszystkich operatorów.
-		 */
-		return expr_(object);
-	}
-};
 
 template <typename T1, typename T2>
 eq_impl<T1, T2> operator==(T1 t1, T2 t2)
@@ -320,7 +340,6 @@ neq_impl<T1, T2> operator!=(T1 t1, T2 t2)
 {
 	return neq_impl<T1, T2>(t1, t2);
 }
-
 
 template <typename T1, typename T2>
 and_impl<T1, T2> operator&(T1 t1, T2 t2)
