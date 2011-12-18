@@ -1,8 +1,10 @@
 CMAKE_MINIMUM_REQUIRED (VERSION 2.6)
 PROJECT (tests)
 
-SET (tests_SOURCES
+ADD_EXECUTABLE (tests
 	main.cpp)
 
-ADD_EXECUTABLE (tests
-	${tests_SOURCES})
+PROJECT (db)
+
+ADD_EXECUTABLE (db
+	db.cpp)

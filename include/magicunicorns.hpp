@@ -179,6 +179,11 @@ struct dbset
 		
 		return results;
 	}
+	
+	std::list<T>& all()
+	{
+		return rows_;
+	}
 };
 
 struct dbcontext
