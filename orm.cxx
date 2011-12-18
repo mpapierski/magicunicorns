@@ -129,20 +129,58 @@ struct manager: dbcontext
 };
 
 template <typename T1, typename T2>
-struct eq_impl
+struct field_impl
 {
-	field<T1> T2::* field_; /* field data type */
-	typedef T2 class_type_t; /* class type */
+	typedef T1 value_type;
+	typedef field<T1> T2::* member_field_type;
+	typedef field<T1> field_type;
 	
-	eq_impl(field<T1> T2::* t): field_(t) {}
+	field<T1> T2::* field_;
+	field_impl(field<T1> T2::* t): field_(t) {}
 	
-	template <typename F1, typename F2>
-	bool operator()(F1 obj, F2 val)
+	template <typename F1>
+	T1 operator()(F1 obj)
 	{
-		/* wlasciwa implementacja operatora */
-		return *obj.*field_ == val;		
+		return (*obj.*field_).value_;
 	}
 };
+
+template <typename T1, typename T2>
+struct eq_impl
+{
+	T1 expr_;
+	T2 value_;
+	
+	eq_impl(T1 t, T2 value): expr_(t), value_(value) {}
+	
+	template <typename F1>
+	bool operator()(F1 obj)
+	{
+		return expr_(obj) == value_;
+	}
+	
+	template <typename F1, typename F2>
+	F1 operator()(F1 obj, F2 val)
+	{
+		return expr_(obj, val) == value_;
+	}
+};
+
+template <typename T1, typename T2>
+struct and_impl
+{
+	T1 expr_;
+	T2 value_;
+	
+	and_impl(T1 t, T2 value): expr_(t), value_(value) {}
+	
+	template <typename T>
+	bool operator()(T obj)
+	{
+		return expr_(obj) && value_(obj);
+	}
+};
+
 
 /* 
  * TODO: Zamiast eq_impl zrobic field_impl
@@ -151,11 +189,12 @@ struct eq_impl
  * powinno zwrocic typ expr<and_impl<eq_impl<...>, eq_impl<...> > >
  */
 template <typename T1, typename T2>
-eq_impl<T1, T2> F(field<T1> T2::* fld)
+field_impl<T1, T2> F(field<T1> T2::* fld)
 {
-	return eq_impl<T1, T2>(fld);
+	return field_impl<T1, T2>(fld);
 }
 
+//template <typename FieldT>
 template <typename FieldT, typename ValueT>
 struct expr
 {
@@ -166,38 +205,82 @@ struct expr
 		field_(fld),
 		value_(value) {}
 	
-	template <typename T>
-	bool operator()(T object)
+	template <typename T1>
+	bool operator()(T1 object)
 	{
 		/* 
 		 * field_ to implementacja naszego operatora
 		 * a wiec przekazmy tam spowrotem nasz obiekt i wartosc
 		 * aby nie duplikowac kodu wszystkich operatorów.
 		 */
-		return field_(object, value_);
+		return expr_(object);
 	}
 };
 
-template <typename T1, typename T2, typename T3>
-expr<eq_impl<T1, T2>, T3> operator==(eq_impl<T1, T2> fld, T3 value)
+template <typename T1, typename T2>
+eq_impl<T1, T2> operator==(T1 t1, T2 t2)
 {
-	/* zwroc wyrazenie z wlasciwym operatorem */
-	return expr<eq_impl<T1, T2>, T3>(fld, value);
+	return eq_impl<T1, T2>(t1, t2);
+}
+
+template <typename T1, typename T2>
+and_impl<T1, T2> operator&(T1 t1, T2 t2)
+{
+	return and_impl<T1, T2>(t1, t2);
 }
 
 int
 main(int argc, const char* argv[])
 {
-	manager mgr;
+	{
+		people p1(123, "Janusz", "Paweliusz");
+		
+		F(&people::people_id);
+		F(&people::people_id)(&p1);
+		
+		F(&people::people_id) == 123;
+		
+		assert( (F(&people::people_id)(&p1) ) == 123);
+		assert(! ((F(&people::people_id)(&p1) ) == 124));
+		
+		F(&people::first_name);
+		F(&people::first_name)(&p1);
+		F(&people::first_name) == "asdf";
+		(F(&people::first_name) == "asdf")(&p1);
+		assert(( (F(&people::first_name) == "Janusz")(&p1) ) == true);
+	}
 	
-	mgr.peoples.put(people(1, "Jan", "Kowalski"));
-	mgr.peoples.put(people(2, "asdf", "zxcv"));
+	{
+		people p1(123, "asdf", "zxcv");
+		((F(&people::first_name) == "asdf") & (F(&people::second_name) == "zxcv"));
+		assert((((F(&people::people_id) == 123) & (F(&people::first_name) == "asdf") & (F(&people::second_name) == "zxcv"))(&p1)) == true);
+		assert((((F(&people::first_name) == "asdf") & (F(&people::second_name) == "zxcv"))(&p1)) == true);
+		assert(!(((F(&people::first_name) == "asdf") & (F(&people::second_name) == "asdf"))(&p1)));
+	}
 	
-	assert(mgr.peoples.find(F(&people::people_id) == 1).size() == 1);
-	assert(mgr.peoples.find(F(&people::people_id) == 2).size() == 1);
-	assert(mgr.peoples.find(F(&people::people_id) == 3).size() == 0);
+	{
+		manager mgr;
 	
-	assert(mgr.peoples.find(F(&people::first_name) == "Jan").size() == 1);
-	assert(mgr.peoples.find(F(&people::first_name) == "zxcv").size() == 0);
+		mgr.peoples.put(people(1, "Jan", "Kowalski"));
+		mgr.peoples.put(people(2, "asdf", "zxcv"));
+		mgr.peoples.put(people(3, "qwer", "sgbmkfgmbks"));
+		mgr.peoples.put(people(4, "qwer2", "qwererywer"));
+		mgr.peoples.put(people(5, "qwer3", "qwererywer"));
+		
+		assert(mgr.peoples.find(F(&people::people_id) == 1).size() == 1);
+		assert(mgr.peoples.find(F(&people::people_id) == 2).size() == 1);
+		assert(mgr.peoples.find(F(&people::people_id) == 3).size() == 1);
+		
+		assert(mgr.peoples.find(F(&people::first_name) == std::string("Jan")).size() == 1);
+		assert(mgr.peoples.find(F(&people::first_name) == "zxcv").size() == 0);
+		
+		assert(mgr.peoples.find(
+			(F(&people::people_id) == 5) &
+			(F(&people::first_name) == "qwer3") &
+			(F(&people::second_name) == "qwererywer")
+		).size() == 1);
+		
+		
+	}
 	return 0;
 }
