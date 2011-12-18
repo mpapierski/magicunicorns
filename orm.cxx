@@ -64,6 +64,21 @@ struct field: abstract_field
 		return value_ == val;
 	}
 	
+	operator T()
+	{
+		return value_;
+	}
+	operator const T()
+	{
+		return value_;
+	}
+	
+	friend ostream& operator<<(ostream& out, const field& fld)
+	{
+		out << fld.value_;
+		return out;
+	}
+	
 	string name_;
 	value_type value_;
 	get_type<T> type_;
@@ -83,13 +98,50 @@ struct people: table
 		people_id(this, "people_id", id),
 		first_name(this, "first_name", first_name),
 		second_name(this, "second_name", second_name) {}
+	
+	friend ostream& operator<<(ostream& out, const people& p)
+	{
+		out << "people(" << p.people_id << ", " << p.first_name << ", " << p.second_name << ")";
+		return out;
+	}
+};
+
+template <typename T /* Container */>
+struct cursor_impl
+{
+	cursor_impl(T t):
+		container_(t),
+		it_(container_.begin())
+	{
+	}
+	
+	operator bool()
+	{
+		return it_ != container_.end();
+	}
+	
+	cursor_impl& operator++()
+	{
+		++it_;
+		return *this;
+	}
+	
+	typename iterator_traits<typename T::iterator>::value_type operator*()
+	{
+		return *it_;	
+	}
+	
+	T container_;
+	typename T::iterator it_;
+	typename T::iterator end_;
 };
 
 template <typename T>
 struct dbset
 {
 	list<T> rows_;
-	typedef typename list<T>::iterator iterator;
+	
+	typedef cursor_impl<list<T> > cursor;
 	
 	dbset()
 	{
@@ -384,6 +436,10 @@ main(int argc, const char* argv[])
 			(F(&people::people_id) != 2)
 		).size() == 3);
 		
+		for (dbset<people>::cursor c(mgr.peoples.find(F(&people::people_id) > 1)); c; ++c)
+		{
+			cout << *c << endl;
+		}
 	}
 	return 0;
 }
