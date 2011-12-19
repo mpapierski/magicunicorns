@@ -29,7 +29,6 @@ struct context: dbcontext
 	dbset<person> persons;
 };
 
-
 void menu()
 {
 	cout << "add\tadd new person" << endl <<

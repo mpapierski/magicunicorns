@@ -21,6 +21,59 @@
 #include <vector>
 #include <list>
 #include <map>
+#include <exception>
+
+/* Constraints implementation */
+
+struct constraint_expr
+{
+	template <typename T>
+	T& operator=(T t)
+	{
+		return *this;
+	}
+};
+
+template <typename Impl>
+class constraint
+{
+	private:
+		constraint(const constraint&);
+		
+	public:
+		constraint() {}
+		~constraint() {}
+		Impl impl_;
+
+		template <typename T1 /* Field */, typename T2 /* dbset */>
+		void operator()(T1& t1, T2& t2)
+		{
+			t1 = impl_(t1, t2);
+		}
+};
+
+template <typename T1, typename T2>
+struct constraint_or
+{
+	T1& t1_;
+	T2& t2_;
+	constraint_or(T1& t1, T2& t2) :
+		t1_(t1), t2_(t2) {}
+		
+	template <typename F1 /* Field */, typename F2 /* dbset */>
+	void operator()(F1& f1, F2& f2)
+	{
+		t1_(f1, f2);
+		t2_(f1, f2);
+	}
+};
+
+template <typename T1, typename T2>
+constraint_or<constraint<T1>, constraint<T2> > operator|(constraint<T1>& t1, constraint<T2>& t2)
+{
+	return constraint_or<constraint<T1>, constraint<T2> >(t1, t2);
+}
+/* end */
 
 struct abstract_field
 {
@@ -83,6 +136,11 @@ struct field: abstract_field
 		return value_ == val;
 	}
 	
+	bool operator==(const field& other)
+	{
+		return value_ == other.value_;
+	}
+	
 	operator T()
 	{
 		return value_;
@@ -101,6 +159,7 @@ struct field: abstract_field
 	std::string name_;
 	value_type value_;
 	get_type<T> type_;
+	constraint_expr constraint_; /* Constraint expr */
 	
 	virtual std::string name() { return name_; }
 	virtual std::string type() { return type_.value(); }
@@ -363,3 +422,54 @@ lt_impl<T1, T2> operator<(T1 t1, T2 t2)
 {
 	return lt_impl<T1, T2>(t1, t2);
 }
+
+/* Constraints implementations */
+
+struct auto_increment_impl
+{
+	template <typename T1, typename T2>
+	field<T1>& operator()(field<T1>& source, dbset<T2>& set)
+	{
+		std::cout << "Auto increment from value (" << source << ") new value: " << (set.all().size() + 1) << std::endl;
+		source = set.all().size() + 1;
+		return source;
+	}
+};
+
+struct unique_constraint_violation: std::exception
+{
+	virtual const char* what() const throw()
+	{
+		return "unique constraint violation";
+	}
+};
+
+struct unique_impl
+{
+	template <typename T>
+	T& operator()(T& source, dbset<T>& set)
+	{
+		std::list<T>& all = set.all();
+		for (typename std::list<T>::iterator it(all.begin()),
+			end_(all.end());
+			it != end_;
+			++it)
+		{
+			if (*it == source)
+				throw unique_constraint_violation();
+		}
+		return source;
+	}
+	
+	/**
+	 * TODO: Field must be able to return instance of type T2
+	 */
+	template <typename T1, typename T2>
+	field<T1>& operator()(field<T1>& source, dbset<T2>& set)
+	{
+		return source;
+	}	
+};
+
+static constraint<auto_increment_impl> auto_increment;
+static constraint<unique_impl> unique;
