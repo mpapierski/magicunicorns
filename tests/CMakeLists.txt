@@ -11,3 +11,7 @@ ADD_EXECUTABLE (db
 PROJECT (constraint)
 ADD_EXECUTABLE (constraint
 	constraint.cpp)
+
+PROJECT (update)
+ADD_EXECUTABLE (update
+	update.cpp)

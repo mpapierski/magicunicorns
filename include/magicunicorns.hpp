@@ -239,6 +239,21 @@ struct dbset
 		return results;
 	}
 	
+	/**
+	 * Update rows matching expr... If expr `where` evaluated to true
+	 * then evaluate expr `stmt`
+	 */
+	template <typename F1, typename F2>
+	void update(F1 where, F2 stmt)
+	{
+		for (typename std::list<T>::iterator it = rows_.begin(),
+			end(rows_.end()); it != end; it++)
+		{
+			if (where(it))
+				stmt(it);
+		}
+	}
+	
 	std::list<T>& all()
 	{
 		return rows_;
@@ -251,6 +266,50 @@ struct dbcontext
 };
 
 /**
+ * Chain operator implementation
+ * This is not static operator because of possible compilation failure
+ */
+template <typename T1, typename T2>
+struct chain_impl
+{
+	chain_impl(T1 t1, T2 t2): t1_(t1), t2_(t2) {}
+	T1 t1_;
+	T2 t2_;
+	template <typename F1>
+	void operator()(F1 f1)
+	{
+		t1_(f1);
+		t2_(f1);
+	}
+};
+
+/**
+ * Assignment operator implementation
+ * Can not be static
+ */
+template <typename T1, typename T2>
+struct assign_impl
+{
+	assign_impl(T1 t1, T2 t2): t1_(t1), t2_(t2) {}
+	T1 t1_;
+	T2 t2_;
+	
+	template <typename F1>
+	void operator()(F1 f1)
+	{
+		t1_(f1) = t2_;
+	}
+	
+	template <typename A1, typename A2>
+	chain_impl<assign_impl<T1, T2>, assign_impl<A1, A2> > operator,(assign_impl<A1, A2> f)
+	{
+		return chain_impl<assign_impl<T1, T2>, assign_impl<A1, A2> >(*this, f);
+	}
+};
+
+
+
+/**
  * This class will be evaluated later to value from member class field.
  */
 template <typename T1, typename T2>
@@ -259,8 +318,13 @@ struct field_impl
 	field<T1> T2::* field_;
 	field_impl(field<T1> T2::* t): field_(t) {}
 	
+	assign_impl<field_impl<T1, T2>, T1> operator=(T1 f)
+	{
+		return assign_impl<field_impl<T1, T2>, T1>(*this, f);
+	}
+	
 	template <typename F1>
-	T1 operator()(F1 obj)
+	T1& operator()(F1 obj)
 	{
 		return (*obj.*field_).value_;
 	}
@@ -422,6 +486,12 @@ lt_impl<T1, T2> operator<(T1 t1, T2 t2)
 {
 	return lt_impl<T1, T2>(t1, t2);
 }
+
+/*template <typename T1, typename T2, typename T3, typename T4>
+chain_impl<assign_impl<T1, T2>, assign_impl<T3, T4> > operator,(assign_impl<T1, T2>& t1, assign_impl<T3, T4>& t2)
+{
+	return chain_impl<assign_impl<T1, T2>, assign_impl<T3, T4> >(t1, t2);
+}*/
 
 /* Constraints implementations */
 
