@@ -46,7 +46,7 @@ main(int argc, char* argv[])
 	
 	ctx.persons.update(
 		(F(&person::id) > 1) & (F(&person::id) < 3), ( /* Where */
-		F(&person::first_name) = "John", F(&person::second_name) = "Appleseed"
+		F(&person::first_name) = val("John"), F(&person::second_name) = val("Appleseed")
 	));
 	
 	{
@@ -54,6 +54,29 @@ main(int argc, char* argv[])
 		++cur;
 		assert((*cur).first_name.value_ == "John");
 		assert((*cur).second_name.value_ == "Appleseed");
+	}
+	
+	{
+		/* Operator+ test */
+		person test(1000, "first_name", "second_name");
+		(F(&person::first_name) + F(&person::second_name));
+		(F(&person::first_name) + F(&person::second_name))(&test);
+		assert(((F(&person::first_name) + F(&person::second_name))(&test))() == "first_namesecond_name");
+		(F(&person::id) + F(&person::id));
+		assert(((F(&person::id) + F(&person::id))(&test))() == 2000);
+		(F(&person::id) + val(1));
+		(F(&person::id) + val(1))(&test);
+		assert(((F(&person::id) + val(1))(&test))() == 1001);
+	}
+	
+	{
+		ctx.persons.update(
+			(F(&person::id) > 1) & (F(&person::id) < 3),
+			F(&person::id) = F(&person::id) + val(1)
+		);
+		dbset<person>::cursor cur(ctx.persons.all());
+		++cur;
+		assert((*cur).id == 3);		
 	}
 	
 	return 0;

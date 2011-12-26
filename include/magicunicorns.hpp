@@ -254,6 +254,20 @@ struct dbset
 		}
 	}
 	
+	/**
+	 * Update all rows... Really just evaluate stmt with every object
+	 * in set.
+	 */
+	template <typename F>
+	void update(F stmt)
+	{
+		for (typename std::list<T>::iterator it = rows_.begin(),
+			end(rows_.end()); it != end; it++)
+		{
+			stmt(it);
+		}
+	}
+	
 	std::list<T>& all()
 	{
 		return rows_;
@@ -297,7 +311,7 @@ struct assign_impl
 	template <typename F1>
 	void operator()(F1 f1)
 	{
-		t1_(f1) = t2_;
+		t1_(f1) = t2_(f1);
 	}
 	
 	template <typename A1, typename A2>
@@ -307,20 +321,20 @@ struct assign_impl
 	}
 };
 
-
-
 /**
  * This class will be evaluated later to value from member class field.
  */
 template <typename T1, typename T2>
 struct field_impl
 {
+	typedef T1 value_type;
 	field<T1> T2::* field_;
 	field_impl(field<T1> T2::* t): field_(t) {}
 	
-	assign_impl<field_impl<T1, T2>, T1> operator=(T1 f)
+	template <typename F>
+	assign_impl<field_impl<T1, T2>, F> operator=(F f)
 	{
-		return assign_impl<field_impl<T1, T2>, T1>(*this, f);
+		return assign_impl<field_impl<T1, T2>, F>(*this, f);
 	}
 	
 	template <typename F1>
@@ -445,6 +459,64 @@ struct and_impl
 	}
 };
 
+
+template <typename T1>
+struct value_impl
+{
+	/**
+	 * Ugly hack to know the type of trapped value
+	 */
+	typedef T1 value_type;
+	
+	value_impl(T1 t1): t1_(t1) {}
+	T1 t1_;
+	
+	/**
+	 * Return trapped value
+	 */
+	T1 operator()() { return t1_; }
+	
+	/**
+	 * Return trapped value and act as field_impl.
+	 */
+	template <typename F>
+	T1 operator()(F) { return t1_; }
+	
+	/**
+	 * If accidental implicit conversion happens...
+	 */
+	operator value_type() { return t1_; }
+};
+
+/**
+ * Implementation of operator+ (A + B)
+ */
+template <typename T1, typename T2>
+struct plus_impl
+{
+	typedef T1 value_type; /* plus_impl acts as value_impl too... */
+	
+	T1 expr_;
+	T2 value_;
+	
+	plus_impl(T1 t, T2 value): expr_(t), value_(value) {}
+	
+	template <typename F>
+	value_impl<typename T1::value_type> operator()(F obj)
+	{
+		return value_impl<typename T1::value_type>(expr_(obj) + value_(obj));
+	}
+};
+
+/**
+ * Value holder
+ */
+template <typename T1>
+value_impl<T1> val(T1 t1)
+{
+	return value_impl<T1>(t1);
+}
+
 /**
  * As I can not force static operator to accept type of field<T1> T2::*
  * I had to do this.
@@ -486,6 +558,26 @@ lt_impl<T1, T2> operator<(T1 t1, T2 t2)
 {
 	return lt_impl<T1, T2>(t1, t2);
 }
+
+template <typename T1, typename T2>
+plus_impl<T1, T2> operator+(T1 t1, T2 t2)
+{
+	return plus_impl<T1, T2>(t1, t2);
+}
+
+/*template <typename T1, typename T2, typename Cls>
+plus_impl<field_impl<T1, Cls>, value_impl<T2> > operator+(field_impl<T1, Cls> t1, value_impl<T2> t2)
+{
+	return plus_impl<field_impl<T1, Cls>, value_impl<T2> >(t1, t2);
+}
+
+template <typename T1, typename T2, typename Cls>
+plus_impl<field_impl<T1, Cls>, field_impl<T2, Cls> > operator+(field_impl<T1, Cls> t1, field_impl<T2, Cls> t2)
+{
+	return plus_impl<field_impl<T1, Cls>, field_impl<T2, Cls> >(t1, t2);
+}*/
+
+
 
 /*template <typename T1, typename T2, typename T3, typename T4>
 chain_impl<assign_impl<T1, T2>, assign_impl<T3, T4> > operator,(assign_impl<T1, T2>& t1, assign_impl<T3, T4>& t2)
