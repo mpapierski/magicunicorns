@@ -23,35 +23,15 @@
 #include <map>
 #include <exception>
 
-/* Interfaces */
-struct abstract_field
-{
-	virtual std::string type() = 0;
-	virtual std::string name() = 0;
-	virtual bool operator==(abstract_field& other) = 0;
-	virtual bool operator!=(abstract_field& other)
-	{
-		return !this->operator==(other);
-	}
-};
+struct abstract_field;
+struct table;
 
 struct abstract_dbset
 {
-};
+	virtual unsigned int size() const = 0;
 
-struct table
-{
-	table(const std::string& tablename) :
-		tablename_(tablename) {}
-	
-	void add_field(abstract_field* field)
-	{
-		fields_.push_back(std::pair<std::string, std::string>(field->name(), field->type()));
-	}
-	
-	typedef std::vector<std::pair<std::string, std::string> > fields_t;
-	fields_t fields_;
-	std::string tablename_;
+	/* Check if object exists in set */
+	virtual bool exists(table* obj) = 0;
 };
 
 /* Constraints implementation */
@@ -61,6 +41,79 @@ struct abstract_constraint
 	 * Check field, table, or whole dataset.
 	 */
 	virtual void operator()(abstract_field*, table*, abstract_dbset*) = 0;
+};
+
+struct constraint_expr: std::list<abstract_constraint*>, abstract_constraint
+{
+	constraint_expr() {}
+	
+	constraint_expr(abstract_constraint* first)
+	{
+		this->push_back(first);
+	}
+	
+	constraint_expr& operator=(abstract_constraint& impl)
+	{
+		this->push_back(&impl);
+		return *this;
+	}
+	
+	constraint_expr& operator+ (abstract_constraint& other)
+	{
+		this->push_back(&other);
+		return *this;
+	}
+	
+	constraint_expr& operator+ (abstract_constraint* other)
+	{
+		this->push_back(other);
+		return *this;
+	}
+	
+	/* Evaluate */
+	virtual void operator()(abstract_field* fld, table* tbl, abstract_dbset* set)
+	{
+		for (list<abstract_constraint*>::iterator it(this->begin()), end_(end()); it != end_; ++it)
+		{
+			(*it)->operator()(fld, tbl, set);
+		}
+	}
+};
+
+/* Interfaces */
+struct abstract_field
+{
+	virtual std::string type() = 0;
+	virtual std::string name() = 0;
+	virtual bool operator==(abstract_field& other) = 0;
+	
+	bool operator==(abstract_field* other)
+	{
+		return this->operator==(*other);
+	}
+	
+	bool operator!=(abstract_field& other)
+	{
+		return !this->operator==(other);
+	}
+	
+	constraint_expr constraint; /* Constraint expr */
+};
+
+struct table
+{
+	table(const std::string& tablename) :
+		tablename_(tablename) {}
+	
+	void add_field(abstract_field* field)
+	{
+		fields_.push_back(field);
+	}
+	
+	typedef std::vector<abstract_field*> fields_t;
+	
+	fields_t fields_;
+	std::string tablename_;
 };
 
 /**
@@ -73,15 +126,17 @@ template <typename Impl>
 struct constraint: abstract_constraint
 {
 	Impl impl_;
-	virtual void operator()(abstract_field*, table*, abstract_dbset*)
-	{
-		std::cout << "Constraint " << __PRETTY_FUNCTION__ << std::endl;
-	};
-};
-
-struct constraint_expr: std::list<abstract_constraint*>
-{
 	
+	virtual void operator()(abstract_field* fld, table* tbl, abstract_dbset* set)
+	{
+		impl_(fld, tbl, set);
+	};
+	
+	template <typename T>
+	constraint_expr operator| (constraint<T>& other)
+	{
+		return constraint_expr(this) + other;
+	}
 };
 
 /* end */
@@ -140,8 +195,7 @@ struct field: abstract_field
 	std::string name_;
 	value_type value_;
 	get_type<T> type_;
-	constraint_expr constraint_; /* Constraint expr */
-	
+		
 	virtual std::string name() { return name_; }
 	virtual std::string type() { return type_.value(); }
 };
@@ -196,6 +250,11 @@ struct dbset: abstract_dbset
 	
 	void put(T t)
 	{
+		for (typename T::fields_t::iterator it(t.fields_.begin()),
+			end(t.fields_.end()); it != end; ++it)
+		{
+			(*it)->constraint(*it, &t, this);
+		}
 		rows_.push_back(t);
 	}
 	
@@ -227,7 +286,7 @@ struct dbset: abstract_dbset
 	template <typename F1, typename F2>
 	void update(F1 where, F2 stmt)
 	{
-		for (typename std::list<T>::iterator it = rows_.begin(),
+		for (typename std::list<T>::iterator it(rows_.begin()),
 			end(rows_.end()); it != end; it++)
 		{
 			if (where(it))
@@ -242,7 +301,7 @@ struct dbset: abstract_dbset
 	template <typename F>
 	void update(F stmt)
 	{
-		for (typename std::list<T>::iterator it = rows_.begin(),
+		for (typename std::list<T>::iterator it(rows_.begin()),
 			end(rows_.end()); it != end; it++)
 		{
 			stmt(it);
@@ -252,6 +311,25 @@ struct dbset: abstract_dbset
 	std::list<T>& all()
 	{
 		return rows_;
+	}
+	
+	virtual unsigned int size() const { return rows_.size(); }
+	
+	/* Object exists in set? */
+	virtual bool exists(table* obj)
+	{
+		bool found = false;
+		T* evaluated = static_cast<T*>(obj);
+		for (typename std::list<T>::iterator it(rows_.begin()),
+			end(rows_.end()); it != end; ++it)
+		{
+			if (*it == *evaluated)
+			{
+				found = true;
+				break;
+			}
+		}
+		return found;
 	}
 };
 
@@ -561,27 +639,10 @@ field_impl<T1, T2> F(field<T1> T2::* fld)
 
 struct auto_increment_impl: abstract_constraint
 {
-	virtual void operator()(abstract_field*, table*, abstract_dbset*)
+	virtual void operator()(abstract_field* fld, table*, abstract_dbset* set)
 	{
-		std::cout << __PRETTY_FUNCTION__ << std::endl;
-	}
-};
-
-struct unique_constraint_violation: std::exception
-{
-	virtual const char* what() const throw()
-	{
-		return "unique constraint violation";
-	}
-};
-
-struct unique_impl: abstract_constraint
-{
-	virtual void operator()(abstract_field*, table*, abstract_dbset*)
-	{
-		std::cout << __PRETTY_FUNCTION__ << std::endl;
+		*dynamic_cast<field<int>*>(fld) = set->size() + 1;
 	}
 };
 
 static constraint<auto_increment_impl> auto_increment;
-static constraint<unique_impl> unique;

@@ -14,13 +14,21 @@ struct person: table
 	person(int id, const string& first_name, const string& second_name) :
 		table("person"), id(this, "id", id),
 		first_name(this, "first_name", first_name),
-		second_name(this, "second_name", second_name) {}
+		second_name(this, "second_name", second_name)
+	{
+	}
+	
 	friend ostream& operator<<(ostream& out, const person& p)
 	{
 		out << "person(" << p.id << ",\"" <<
 			p.first_name << "\", \"" <<
 			p.second_name << "\")";
 		return out;
+	}
+	
+	bool operator==(person& other)
+	{
+		return (id == other.id)	&& (first_name == other.first_name) && (second_name == other.second_name);
 	}
 };
 
