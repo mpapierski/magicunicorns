@@ -23,62 +23,20 @@
 #include <map>
 #include <exception>
 
-/* Constraints implementation */
-
-struct constraint_expr
-{
-	template <typename T>
-	T& operator=(T t)
-	{
-		return *this;
-	}
-};
-
-template <typename Impl>
-class constraint
-{
-	private:
-		constraint(const constraint&);
-		
-	public:
-		constraint() {}
-		~constraint() {}
-		Impl impl_;
-
-		template <typename T1 /* Field */, typename T2 /* dbset */>
-		void operator()(T1& t1, T2& t2)
-		{
-			t1 = impl_(t1, t2);
-		}
-};
-
-template <typename T1, typename T2>
-struct constraint_or
-{
-	T1& t1_;
-	T2& t2_;
-	constraint_or(T1& t1, T2& t2) :
-		t1_(t1), t2_(t2) {}
-		
-	template <typename F1 /* Field */, typename F2 /* dbset */>
-	void operator()(F1& f1, F2& f2)
-	{
-		t1_(f1, f2);
-		t2_(f1, f2);
-	}
-};
-
-template <typename T1, typename T2>
-constraint_or<constraint<T1>, constraint<T2> > operator|(constraint<T1>& t1, constraint<T2>& t2)
-{
-	return constraint_or<constraint<T1>, constraint<T2> >(t1, t2);
-}
-/* end */
-
+/* Interfaces */
 struct abstract_field
 {
 	virtual std::string type() = 0;
 	virtual std::string name() = 0;
+	virtual bool operator==(abstract_field& other) = 0;
+	virtual bool operator!=(abstract_field& other)
+	{
+		return !this->operator==(other);
+	}
+};
+
+struct abstract_dbset
+{
 };
 
 struct table
@@ -95,6 +53,38 @@ struct table
 	fields_t fields_;
 	std::string tablename_;
 };
+
+/* Constraints implementation */
+struct abstract_constraint
+{
+	/**
+	 * Check field, table, or whole dataset.
+	 */
+	virtual void operator()(abstract_field*, table*, abstract_dbset*) = 0;
+};
+
+/**
+ * Why constraint is just a proxy to the actual implementation?
+ * Because we can force to compile-time analysis on template parameters,
+ * and force them to be constraint of any implementation.
+ * For example in operators.
+ */
+template <typename Impl>
+struct constraint: abstract_constraint
+{
+	Impl impl_;
+	virtual void operator()(abstract_field*, table*, abstract_dbset*)
+	{
+		std::cout << "Constraint " << __PRETTY_FUNCTION__ << std::endl;
+	};
+};
+
+struct constraint_expr: std::list<abstract_constraint*>
+{
+	
+};
+
+/* end */
 
 /* 
  * String representation of type.
@@ -130,22 +120,13 @@ struct field: abstract_field
 		value_ = new_value;
 		return *this;
 	}
-	
-	bool operator==(value_type val)
+
+	virtual bool operator==(abstract_field& other)
 	{
-		return value_ == val;
+		return this->value_ == dynamic_cast<field&>(other).value_;
 	}
 	
-	bool operator==(const field& other)
-	{
-		return value_ == other.value_;
-	}
-	
-	operator T()
-	{
-		return value_;
-	}
-	operator const T()
+	operator T() const
 	{
 		return value_;
 	}
@@ -202,7 +183,7 @@ struct cursor_impl
 };
 
 template <typename T>
-struct dbset
+struct dbset: abstract_dbset
 {
 	std::list<T> rows_;
 	
@@ -279,6 +260,30 @@ struct dbcontext
 	/* TODO: database context here */
 };
 
+/* Useful macros 
+ * @note evaluated_type is not an macro, its actual type of struct
+ * with all template parameters typed in.
+ * 
+ * template <typename A1, typename A2, ..., typename An>
+ * struct dummy_impl
+ * {
+ *     typedef dummy_impl<A1, A2, ..., An> evaluated_type;
+ * };
+ */
+#define __CAT(a, b) a##b
+#define _CAT(a, b) __CAT(a, b)
+#define IMPLEMENT_OPERATOR_UNIQ(operator_impl, canonical_name, uniq) \
+	template <typename _CAT(F, uniq)> \
+	operator_impl<evaluated_type, _CAT(F, uniq)> operator canonical_name(_CAT(F, uniq) f) \
+	{ \
+		return operator_impl<evaluated_type, _CAT(F, uniq)>(*this, f); \
+	}
+	
+/* In case of already used template names we use __COUNTER__ to
+ * ensure the template name will be unique. */
+#define IMPLEMENT_OPERATOR(operator_impl, canonical_name) \
+	IMPLEMENT_OPERATOR_UNIQ(operator_impl, canonical_name, __COUNTER__)
+
 /**
  * Chain operator implementation
  * This is not static operator because of possible compilation failure
@@ -295,6 +300,29 @@ struct chain_impl
 		t1_(f1);
 		t2_(f1);
 	}
+};
+
+/**
+ * Implementation of operator& (logical AND)
+ */
+template <typename T1, typename T2>
+struct and_impl
+{
+	typedef and_impl<T1, T2> evaluated_type;
+	
+	T1 expr_;
+	T2 value_;
+	
+	and_impl(T1 t, T2 value): expr_(t), value_(value) {}
+	
+	template <typename T>
+	bool operator()(T obj)
+	{
+		return expr_(obj) && value_(obj);
+	}
+	
+	/* Ops */
+	IMPLEMENT_OPERATOR(and_impl, &)
 };
 
 /**
@@ -322,34 +350,13 @@ struct assign_impl
 };
 
 /**
- * This class will be evaluated later to value from member class field.
- */
-template <typename T1, typename T2>
-struct field_impl
-{
-	typedef T1 value_type;
-	field<T1> T2::* field_;
-	field_impl(field<T1> T2::* t): field_(t) {}
-	
-	template <typename F>
-	assign_impl<field_impl<T1, T2>, F> operator=(F f)
-	{
-		return assign_impl<field_impl<T1, T2>, F>(*this, f);
-	}
-	
-	template <typename F1>
-	T1& operator()(F1 obj)
-	{
-		return (*obj.*field_).value_;
-	}
-};
-
-/**
  * Implementation of operator== (logical AND)
  */
 template <typename T1, typename T2>
 struct eq_impl
 {
+	typedef eq_impl<T1, T2> evaluated_type;
+	
 	T1 expr_;
 	T2 value_;
 	
@@ -367,6 +374,9 @@ struct eq_impl
 	{
 		return expr_(obj, val) == value_;
 	}
+	
+	/* Ops */
+	IMPLEMENT_OPERATOR(and_impl, &)
 };
 
 /**
@@ -399,6 +409,8 @@ struct neq_impl
 template <typename T1, typename T2>
 struct gt_impl
 {
+	typedef gt_impl<T1, T2> evaluated_type;
+	
 	T1 expr_;
 	T2 value_;
 	
@@ -415,6 +427,9 @@ struct gt_impl
 	{
 		return expr_(obj, val) > value_;
 	}
+	
+	/* Ops */
+	IMPLEMENT_OPERATOR(and_impl, &)
 };
 
 /**
@@ -440,25 +455,6 @@ struct lt_impl
 		return expr_(obj, val) < value_;
 	}
 };
-
-/**
- * Implementation of operator& (logical AND)
- */
-template <typename T1, typename T2>
-struct and_impl
-{
-	T1 expr_;
-	T2 value_;
-	
-	and_impl(T1 t, T2 value): expr_(t), value_(value) {}
-	
-	template <typename T>
-	bool operator()(T obj)
-	{
-		return expr_(obj) && value_(obj);
-	}
-};
-
 
 template <typename T1>
 struct value_impl
@@ -518,6 +514,38 @@ value_impl<T1> val(T1 t1)
 }
 
 /**
+ * This class will be evaluated later to value from member class field.
+ */
+template <typename T1, typename T2>
+struct field_impl
+{
+	typedef field_impl<T1, T2> evaluated_type;
+	
+	typedef T1 value_type;
+	field<T1> T2::* field_;
+	field_impl(field<T1> T2::* t): field_(t) {}
+	
+	template <typename F>
+	assign_impl<field_impl<T1, T2>, F> operator=(F f)
+	{
+		return assign_impl<field_impl<T1, T2>, F>(*this, f);
+	}
+	
+	template <typename F1>
+	T1& operator()(F1 obj)
+	{
+		return (*obj.*field_).value_;
+	}
+	
+	/* Ops */
+	IMPLEMENT_OPERATOR(eq_impl, ==)
+	IMPLEMENT_OPERATOR(and_impl, &)
+	IMPLEMENT_OPERATOR(lt_impl, <)
+	IMPLEMENT_OPERATOR(gt_impl, >)
+	IMPLEMENT_OPERATOR(plus_impl, +)
+};
+
+/**
  * As I can not force static operator to accept type of field<T1> T2::*
  * I had to do this.
  * This thing actually spawns new instance of field_impl which just
@@ -529,72 +557,13 @@ field_impl<T1, T2> F(field<T1> T2::* fld)
 	return field_impl<T1, T2>(fld);
 }
 
-template <typename T1, typename T2>
-eq_impl<T1, T2> operator==(T1 t1, T2 t2)
-{
-	return eq_impl<T1, T2>(t1, t2);
-}
-
-template <typename T1, typename T2>
-neq_impl<T1, T2> operator!=(T1 t1, T2 t2)
-{
-	return neq_impl<T1, T2>(t1, t2);
-}
-
-template <typename T1, typename T2>
-and_impl<T1, T2> operator&(T1 t1, T2 t2)
-{
-	return and_impl<T1, T2>(t1, t2);
-}
-
-template <typename T1, typename T2>
-gt_impl<T1, T2> operator>(T1 t1, T2 t2)
-{
-	return gt_impl<T1, T2>(t1, t2);
-}
-
-template <typename T1, typename T2>
-lt_impl<T1, T2> operator<(T1 t1, T2 t2)
-{
-	return lt_impl<T1, T2>(t1, t2);
-}
-
-template <typename T1, typename T2>
-plus_impl<T1, T2> operator+(T1 t1, T2 t2)
-{
-	return plus_impl<T1, T2>(t1, t2);
-}
-
-/*template <typename T1, typename T2, typename Cls>
-plus_impl<field_impl<T1, Cls>, value_impl<T2> > operator+(field_impl<T1, Cls> t1, value_impl<T2> t2)
-{
-	return plus_impl<field_impl<T1, Cls>, value_impl<T2> >(t1, t2);
-}
-
-template <typename T1, typename T2, typename Cls>
-plus_impl<field_impl<T1, Cls>, field_impl<T2, Cls> > operator+(field_impl<T1, Cls> t1, field_impl<T2, Cls> t2)
-{
-	return plus_impl<field_impl<T1, Cls>, field_impl<T2, Cls> >(t1, t2);
-}*/
-
-
-
-/*template <typename T1, typename T2, typename T3, typename T4>
-chain_impl<assign_impl<T1, T2>, assign_impl<T3, T4> > operator,(assign_impl<T1, T2>& t1, assign_impl<T3, T4>& t2)
-{
-	return chain_impl<assign_impl<T1, T2>, assign_impl<T3, T4> >(t1, t2);
-}*/
-
 /* Constraints implementations */
 
-struct auto_increment_impl
+struct auto_increment_impl: abstract_constraint
 {
-	template <typename T1, typename T2>
-	field<T1>& operator()(field<T1>& source, dbset<T2>& set)
+	virtual void operator()(abstract_field*, table*, abstract_dbset*)
 	{
-		std::cout << "Auto increment from value (" << source << ") new value: " << (set.all().size() + 1) << std::endl;
-		source = set.all().size() + 1;
-		return source;
+		std::cout << __PRETTY_FUNCTION__ << std::endl;
 	}
 };
 
@@ -606,31 +575,12 @@ struct unique_constraint_violation: std::exception
 	}
 };
 
-struct unique_impl
+struct unique_impl: abstract_constraint
 {
-	template <typename T>
-	T& operator()(T& source, dbset<T>& set)
+	virtual void operator()(abstract_field*, table*, abstract_dbset*)
 	{
-		std::list<T>& all = set.all();
-		for (typename std::list<T>::iterator it(all.begin()),
-			end_(all.end());
-			it != end_;
-			++it)
-		{
-			if (*it == source)
-				throw unique_constraint_violation();
-		}
-		return source;
+		std::cout << __PRETTY_FUNCTION__ << std::endl;
 	}
-	
-	/**
-	 * TODO: Field must be able to return instance of type T2
-	 */
-	template <typename T1, typename T2>
-	field<T1>& operator()(field<T1>& source, dbset<T2>& set)
-	{
-		return source;
-	}	
 };
 
 static constraint<auto_increment_impl> auto_increment;

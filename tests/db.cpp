@@ -80,7 +80,7 @@ main(int argc, char* argv[])
 			cout << "---" << endl;
 			unsigned int total = 0;
 			for (dbset<person>::cursor cur(ctx.persons.filter(
-					F(&person::first_name) == first_name & F(&person::second_name) == second_name /* Magic! */
+					(F(&person::first_name) == first_name) & (F(&person::second_name) == second_name) /* Magic! */
 				)); cur; ++cur)
 			{
 				cout << (*cur) << endl;

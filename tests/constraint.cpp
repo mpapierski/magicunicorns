@@ -25,11 +25,9 @@ struct person: table
 		return out;
 	}
 	
-	bool operator==(const person& other)
+	bool operator==(person& other)
 	{
-		return (id == other.id)
-			&& (first_name == other.first_name)
-			&& (second_name == other.second_name);
+		return (id == other.id)	&& (first_name == other.first_name) && (second_name == other.second_name);
 	}
 };
 
@@ -41,7 +39,7 @@ struct context: dbcontext
 int
 main(int argc, char* argv[])
 {
-	{
+	/*{
 		context ctx;
 		person p(1, "asdf", "zxcv");
 		(unique | auto_increment)(p.id, ctx.persons);
@@ -61,6 +59,6 @@ main(int argc, char* argv[])
 		{
 			assert(true);
 		}
-	}
+	}*/
 	return 0;
 }
