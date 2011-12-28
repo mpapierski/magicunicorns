@@ -19,9 +19,7 @@ struct person: table
 		first_name(this, "first_name", first_name),
 		second_name(this, "second_name", second_name)
 	{
-		id.constraint = auto_increment;
-		assert(id.constraint.size() == 1);
-		
+		addTrigger(F(&person::id) == 0, F(&person::id) = MAX(F(&person::id)) + val(1));
 		addTrigger(F(&person::id) == 1, (F(&person::first_name) = val("John"), F(&person::second_name) = val("Appleseed")));
 		addTrigger(F(&person::id) == 2, (F(&person::first_name) = val("First name"), F(&person::second_name) = val("Second name")));
 	}
@@ -43,6 +41,7 @@ struct person: table
 struct context: dbcontext
 {
 	dbset<person> persons;
+	context(): persons(this) {}
 };
 
 static context ctx;

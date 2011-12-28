@@ -18,4 +18,8 @@ ADD_EXECUTABLE (update
 
 PROJECT (trigger)
 ADD_EXECUTABLE (trigger
-		trigger.cpp)
+	trigger.cpp)
+
+PROJECT (max)
+ADD_EXECUTABLE (max
+	max.cpp)

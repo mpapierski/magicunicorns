@@ -36,6 +36,7 @@ struct person: table
 struct context: dbcontext
 {
 	dbset<person> persons;
+	context(): persons(this) {}
 };
 
 int

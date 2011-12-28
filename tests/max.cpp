@@ -1,19 +1,24 @@
+#include <iostream>
 #include <string>
 #include <cassert>
 #include <magicunicorns.hpp>
 
 using namespace std;
 
+/**
+ * Person
+ */
 struct person: table
 {
 	field<int> id;
 	field<string> first_name;
 	field<string> second_name;
-	person(int id, const string& first_name, const string& second_name) :
-		table("person"), id(this, "id", id),
+	person(const string& first_name, const string& second_name) :
+		table("person"), id(this, "id"),
 		first_name(this, "first_name", first_name),
 		second_name(this, "second_name", second_name)
 	{
+		addTrigger(F(&person::id) == 0, F(&person::id) = MAX(F(&person::id)) + val(1));
 	}
 	
 	friend ostream& operator<<(ostream& out, const person& p)
@@ -30,24 +35,26 @@ struct person: table
 	}
 };
 
-struct manager: dbcontext
+struct context: dbcontext
 {
 	dbset<person> persons;
-	manager(): persons(this) {}
+	context(): persons(this) {}
 };
 
+static context ctx;
+
 int
-main(int argc, char* argv[])
+main(int argc, char *argv[])
 {
-	manager m;
-	m.persons.put(person(1, "John", "Smith"));
-	m.persons.put(person(2, "Jan", "Kowalski"));
- 	m.persons.put(person(3, "hello", "world"));
-	m.persons.put(person(4, "asdf", "zxcv"));
-	m.persons.put(person(5, "qwer", "1234"));
-	assert( (m.persons.filter(
-		(F(&person::id) > 0) &
-		(F(&person::first_name) == "John") &
-		(F(&person::second_name) == "Smith")).size() == 1));
+	ctx.persons.put(person("null", "null"));
+	ctx.persons.put(person("null", "null"));
+	ctx.persons.put(person("null", "null"));
+	dbset<person>::cursor cur(ctx.persons.all());
+	assert((*cur).id == 1);
+	++cur;
+	assert((*cur).id == 2);
+	++cur;
+	assert((*cur).id == 3);
 	return 0;
 }
+

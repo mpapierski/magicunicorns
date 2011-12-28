@@ -16,7 +16,7 @@ struct person: table
 		first_name(this, "first_name", first_name),
 		second_name(this, "second_name", second_name)
 	{
-		this->id.constraint = ::auto_increment;
+		addTrigger(F(&person::id) == 0, F(&person::id) = MAX(F(&person::id)) + val(1));
 		this->first_name.constraint = ::uppercase;
 		this->second_name.constraint = ::lowercase;
 	}
@@ -38,6 +38,7 @@ struct person: table
 struct context: dbcontext
 {
 	dbset<person> persons;
+	context(): persons(this) {}
 };
 
 void menu()

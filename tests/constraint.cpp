@@ -18,13 +18,12 @@ struct person: table
 		first_name(this, "first_name", first_name),
 		second_name(this, "second_name", second_name)
 	{
-		id.constraint = auto_increment;
-		assert(id.constraint.size() == 1);
 		/* TODO: Implement
 		 * this->first_name.constraint = unique;
 		 * this->second_name.constraint = unique;
 		 * assert(this->first_name.constraint.size() == 1);
 		 * assert(this->second_name.constraint.size() == 1); */
+		addTrigger(F(&person::id) == 0, F(&person::id) = MAX(F(&person::id)) + val(1));
 	}
 	
 	friend ostream& operator<<(ostream& out, const person& p)
@@ -44,6 +43,7 @@ struct person: table
 struct context: dbcontext
 {
 	dbset<person> persons;
+	context(): persons(this) {}
 };
 
 int

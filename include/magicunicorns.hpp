@@ -23,17 +23,23 @@
 #include <map>
 #include <algorithm>
 #include <cstring>
+#include <climits>
 #include <exception>
 
 struct abstract_field;
 struct table;
+struct dbcontext;
 
 struct abstract_dbset
 {
+	abstract_dbset(dbcontext* ctx): parent_(ctx) {}
+	
 	virtual unsigned int size() const = 0;
 
 	/* Check if object exists in set */
 	virtual bool exists(table* obj) = 0;
+	
+	dbcontext* parent_;
 };
 
 /* Constraints implementation */
@@ -166,7 +172,7 @@ struct expression
 struct table
 {
 	table(const std::string& tablename) :
-		tablename_(tablename) {}
+		tablename_(tablename), parent_(NULL) {}
 	
 	void add_field(abstract_field* field)
 	{
@@ -191,6 +197,8 @@ struct table
 			new expression_functor_wrapper<Stmt, typename Stmt::object_type>(stmt)
 		));
 	}
+	
+	abstract_dbset* parent_;
 };
 
 /**
@@ -242,7 +250,8 @@ struct field: abstract_field
 	
 	field(table* parent, std::string name, const value_type& value = value_type()):
 		name_(name),
-		value_(value)
+		value_(value),
+		parent_(parent)
 	{
 		parent->add_field(this);
 	}
@@ -277,6 +286,7 @@ struct field: abstract_field
 	std::string name_;
 	value_type value_;
 	get_type<T> type_;
+	table* parent_;
 		
 	virtual std::string name() { return name_; }
 	virtual std::string type() { return type_.value(); }
@@ -318,6 +328,8 @@ struct cursor_impl
 	typename T::iterator end_;
 };
 
+struct dbcontext;
+
 template <typename T>
 struct dbset: abstract_dbset
 {
@@ -325,13 +337,12 @@ struct dbset: abstract_dbset
 	
 	typedef cursor_impl<std::list<T> > cursor;
 	
-	dbset()
-	{
+	dbset(dbcontext* parent) : abstract_dbset(parent) {}
 		
-	}
-	
 	void put(T t)
 	{
+		t.parent_ = this;
+		
 		for (typename T::fields_t::iterator it(t.fields_.begin()),
 			end(t.fields_.end()); it != end; ++it)
 		{
@@ -643,6 +654,7 @@ struct value_impl
 	 * Ugly hack to know the type of trapped value
 	 */
 	typedef T1 value_type;
+	typedef value_impl<T1> evaluated_type;
 	
 	value_impl(T1 t1): t1_(t1) {}
 	T1 t1_;
@@ -727,6 +739,51 @@ struct field_impl
 };
 
 /**
+ * Implementation of MAX aggregate.
+ */
+template <typename T1>
+struct max_impl
+{
+	typedef max_impl<T1> evaluated_type;
+	typedef int value_type;
+	
+	field_impl<int, T1> field_;
+	
+	max_impl(field_impl<int, T1> fld) :
+		field_(fld) {}
+	
+	template <typename F1>
+	int operator()(F1 f)
+	{
+		int max_val = INT_MIN; /* Min value */
+		abstract_dbset* abstract_set = f->parent_;
+		dbset<T1>* set = static_cast<dbset<T1>*>(abstract_set);
+		for (typename std::list<T1>::iterator it(set->all().begin()),
+			end(set->all().end()); it != end; ++it)
+		{
+			/* 
+			 * Get value of member field using current iterator as this
+			 */
+			int v = *it.*field_.field_; /* Access member field from  */
+			if (v > max_val)
+				max_val = v;
+		}
+		return max_val == INT_MIN ? 0 : max_val;
+	}
+	
+	IMPLEMENT_OPERATOR(plus_impl, +)
+};
+
+/**
+ * Get max value aggregate.
+ */
+template <typename T1>
+max_impl<T1> MAX(field_impl<int, T1> fld)
+{
+	return max_impl<T1>(fld);
+}
+
+/**
  * As I can not force static operator to accept type of field<T1> T2::*
  * I had to do this.
  * This thing actually spawns new instance of field_impl which just
@@ -739,14 +796,6 @@ field_impl<T1, T2> F(field<T1> T2::* fld)
 }
 
 /* Constraints implementations */
-
-struct auto_increment_impl: abstract_constraint
-{
-	virtual void operator()(abstract_field* fld, table*, abstract_dbset* set)
-	{
-		*dynamic_cast<field<int>*>(fld) = set->size() + 1;
-	}
-};
 
 struct uppercase_impl: abstract_constraint
 {
@@ -768,6 +817,5 @@ struct lowercase_impl: abstract_constraint
 	}
 };
 
-static constraint<auto_increment_impl> auto_increment;
 static constraint<uppercase_impl> uppercase;
 static constraint<lowercase_impl> lowercase;
