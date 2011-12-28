@@ -11,11 +11,14 @@ struct person: table
 	field<int> id;
 	field<string> first_name;
 	field<string> second_name;
-	person(int id, const string& first_name, const string& second_name) :
-		table("person"), id(this, "id", id),
+	person(const string& first_name, const string& second_name) :
+		table("person"), id(this, "id"),
 		first_name(this, "first_name", first_name),
 		second_name(this, "second_name", second_name)
 	{
+		this->id.constraint = ::auto_increment;
+		this->first_name.constraint = ::uppercase;
+		this->second_name.constraint = ::lowercase;
 	}
 	
 	friend ostream& operator<<(ostream& out, const person& p)
@@ -64,7 +67,7 @@ main(int argc, char* argv[])
 			getline(cin, first_name);
 			cout << "second_name: ";
 			getline(cin, second_name);
-			ctx.persons.put(person(ctx.persons.all().size() + 1, first_name, second_name));	
+			ctx.persons.put(person(first_name, second_name));	
 		}
 		else if (input == "list")
 		{

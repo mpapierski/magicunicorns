@@ -21,6 +21,8 @@
 #include <vector>
 #include <list>
 #include <map>
+#include <algorithm>
+#include <cstring>
 #include <exception>
 
 struct abstract_field;
@@ -746,4 +748,26 @@ struct auto_increment_impl: abstract_constraint
 	}
 };
 
+struct uppercase_impl: abstract_constraint
+{
+	virtual void operator()(abstract_field* fld, table*, abstract_dbset* set)
+	{
+		std::string value = (std::string)*dynamic_cast<field<std::string>*>(fld);
+		std::transform(value.begin(), value.end(), value.begin(), &toupper);
+		*dynamic_cast<field<std::string>*>(fld) = value;
+	}
+};
+
+struct lowercase_impl: abstract_constraint
+{
+	virtual void operator()(abstract_field* fld, table*, abstract_dbset* set)
+	{
+		std::string value = (std::string)*dynamic_cast<field<std::string>*>(fld);
+		std::transform(value.begin(), value.end(), value.begin(), &tolower);
+		*dynamic_cast<field<std::string>*>(fld) = value;
+	}
+};
+
 static constraint<auto_increment_impl> auto_increment;
+static constraint<uppercase_impl> uppercase;
+static constraint<lowercase_impl> lowercase;
