@@ -100,6 +100,67 @@ struct abstract_field
 	constraint_expr constraint; /* Constraint expr */
 };
 
+
+/* You can assign even complicated expressions into single object */
+
+struct expression_functor
+{
+	virtual bool operator()(table*) = 0;
+};
+
+template <typename CtorType, typename Obj>
+struct expression_functor_wrapper: expression_functor
+{
+	CtorType ff_;
+	expression_functor_wrapper(CtorType ff): ff_(ff) {}
+	
+	virtual bool operator()(table* tbl)
+	{
+		return ff_(static_cast<Obj*>(tbl));
+	}
+};
+
+template <typename ObjT>
+struct expression
+{
+		typedef ObjT object_type;
+		expression_functor* ctor_;
+		
+		expression() :
+			ctor_(NULL) {}
+		
+		template <typename F>
+		expression(F f) :
+			ctor_(new expression_functor_wrapper<F, object_type>(f)) {}
+		
+		template <typename F>
+		expression& operator=(F f)
+		{
+			if (!empty())
+				delete ctor_;
+			ctor_ = new expression_functor_wrapper<F, object_type>(f);
+			return *this;
+		}
+			
+		~expression()
+		{
+			if (empty())
+				return;
+			delete ctor_;
+		}
+		
+		/**
+		 * Call wrapped expression
+		 */
+		bool operator()(object_type* tbl)
+		{
+			return (*ctor_)(tbl);
+		}
+		
+		/* No expression assigned? */
+		bool empty() const { return !ctor_; }
+};
+
 struct table
 {
 	table(const std::string& tablename) :
@@ -114,6 +175,20 @@ struct table
 	
 	fields_t fields_;
 	std::string tablename_;
+	
+	/* Trigger list 
+	 * When expr1 evaluates to true, then evaluate second expression */	
+	typedef std::list<std::pair<expression_functor*, expression_functor*> > triggers_t;
+	triggers_t triggers;
+	
+	template <typename Cond, typename Stmt>
+	void addTrigger(const Cond cond, const Stmt stmt)
+	{
+		triggers.push_back(triggers_t::value_type(
+			new expression_functor_wrapper<Cond, typename Cond::object_type>(cond),
+			new expression_functor_wrapper<Stmt, typename Stmt::object_type>(stmt)
+		));
+	}
 };
 
 /**
@@ -179,6 +254,11 @@ struct field: abstract_field
 	virtual bool operator==(abstract_field& other)
 	{
 		return this->value_ == dynamic_cast<field&>(other).value_;
+	}
+	
+	bool operator==(value_type value)
+	{
+		return value_ == value;
 	}
 	
 	operator T() const
@@ -255,6 +335,15 @@ struct dbset: abstract_dbset
 		{
 			(*it)->constraint(*it, &t, this);
 		}
+		
+		for (typename T::triggers_t::iterator it(t.triggers.begin()),
+			end(t.triggers.end()); it != end; ++it)
+		{
+			if ((*it->first)(&t))
+				((*it->second)(&t));
+		}
+		
+		
 		rows_.push_back(t);
 	}
 	
@@ -369,14 +458,18 @@ struct dbcontext
 template <typename T1, typename T2>
 struct chain_impl
 {
+	typedef chain_impl<T1, T2> evaluated_type;
+	typedef typename T1::object_type object_type;
+	
 	chain_impl(T1 t1, T2 t2): t1_(t1), t2_(t2) {}
 	T1 t1_;
 	T2 t2_;
 	template <typename F1>
-	void operator()(F1 f1)
+	bool operator()(F1 f1)
 	{
 		t1_(f1);
 		t2_(f1);
+		return true;
 	}
 };
 
@@ -410,14 +503,18 @@ struct and_impl
 template <typename T1, typename T2>
 struct assign_impl
 {
+	typedef assign_impl<T1, T2> evaluated_type;
+	typedef typename T1::object_type object_type;
+	
 	assign_impl(T1 t1, T2 t2): t1_(t1), t2_(t2) {}
 	T1 t1_;
 	T2 t2_;
 	
 	template <typename F1>
-	void operator()(F1 f1)
+	bool operator()(F1 f1)
 	{
 		t1_(f1) = t2_(f1);
+		return true;
 	}
 	
 	template <typename A1, typename A2>
@@ -434,6 +531,7 @@ template <typename T1, typename T2>
 struct eq_impl
 {
 	typedef eq_impl<T1, T2> evaluated_type;
+	typedef typename T1::object_type object_type;
 	
 	T1 expr_;
 	T2 value_;
@@ -488,6 +586,8 @@ template <typename T1, typename T2>
 struct gt_impl
 {
 	typedef gt_impl<T1, T2> evaluated_type;
+	
+	typedef typename T1::object_type object_type;
 	
 	T1 expr_;
 	T2 value_;
@@ -598,6 +698,7 @@ template <typename T1, typename T2>
 struct field_impl
 {
 	typedef field_impl<T1, T2> evaluated_type;
+	typedef T2 object_type;
 	
 	typedef T1 value_type;
 	field<T1> T2::* field_;

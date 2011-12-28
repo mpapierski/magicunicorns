@@ -15,3 +15,7 @@ ADD_EXECUTABLE (constraint
 PROJECT (update)
 ADD_EXECUTABLE (update
 	update.cpp)
+
+PROJECT (trigger)
+ADD_EXECUTABLE (trigger
+		trigger.cpp)
